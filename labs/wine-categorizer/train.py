@@ -8,9 +8,11 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score
 
-CSV_PATH = "wine.csv"
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "artifacts", "wine-categorizer.joblib")
+CSV_PATH = os.path.join(BASE_DIR, "wine.csv")
+
 
 def main():
     df = pd.read_csv(CSV_PATH, sep=",")
@@ -61,6 +63,8 @@ def main():
 
     print("Best params:", grid.best_params_)
     print("Test accuracy:", round(acc, 4))
+
+    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
 
     # Save everything Flask needs
     bundle = {
