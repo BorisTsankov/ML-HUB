@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1 style="font-size: 26px; letter-spacing: -0.02em;">{{ lab.title }}</h1>
+<p style="margin-top: 6px;">{{ lab.description }}</p>
+
+{% if error %}
+  <div class="card" style="border-color: rgba(255,92,92,0.35); background: rgba(255,92,92,0.08);">
+    <p class="error" style="margin:0;">{{ error }}</p>
+  </div>
+{% endif %}
+
+<form method="post" id="wineForm" novalidate>
+  <div class="card" style="margin-top: 14px;">
+    <div class="row" style="justify-content: space-between; align-items: baseline;">
+      <h3 style="margin-top:0;">Input features</h3>
+      <div class="hint">Use sliders or type numbers (dot “.” for decimals). Random fills valid values.</div>
+    </div>
+
+    {% set ranges = {
+      "Alcohol": [11.0, 15.0],
+      "Malic acid": [0.74, 5.8],
+      "Ash": [1.36, 3.23],
+      "Alcalinity of ash": [10.6, 30.0],
+      "Magnesium": [70.0, 162.0],
+      "Total phenols": [0.98, 3.88],
+      "Flavanoids": [0.34, 5.08],
+      "Nonflavanoid phenols": [0.13, 0.66],
+      "Proanthocyanins": [0.41, 3.58],
+      "Color intensity": [1.28, 13.0],
+      "Hue": [0.48, 1.71],
+      "OD280/OD315 of diluted wines": [1.27, 4.0],
+      "Proline": [278.0, 1680.0]
+    } %}
+
+    <div class="row" style="margin-top: 10px;">
+      {% for f in feature_names %}
+        {% set r = ranges.get(f) %}
+        {% if r %}
+          {% set minv = r[0] %}
+          {% set maxv = r[1] %}
+          {% set stepv = (0.01 if (maxv - minv) <= 20 else (0.1 if (maxv - minv) <= 200 else 1)) %}
+        {% else %}
+          {% set minv = None %}
+          {% set maxv = None %}
+          {% set stepv = 0.01 %}
+        {% endif %}
+
+        <div style="flex: 1; min-width: 320px;">
+          <div style="display:flex; justify-content: space-between; align-items: baseline; gap: 10px;">
+            <label for="num_{{ loop.index0 }}" style="display:block; font-weight: 800;">
+              {{ f }}
+            </label>
+            {% if r %}
+              <div class="hint" style="margin:0;">{{ minv }} – {{ maxv }}</div>
+            {% endif %}
+          </div>
+
+          <div style="display:flex; gap: 12px; align-items:center; margin-top: 8px;">
+            <!-- Slider -->
+            <input
+              id="rng_{{ loop.index0 }}"
+              type="range"
+              style="flex: 1;"
+              {% if r %}
+                min="{{ minv }}"
+                max="{{ maxv }}"
+                step="{{ stepv }}"
+              {% else %}
+                min="0" max="1" step="0.01"
+              {% endif %}
+              data-pair="num_{{ loop.index0 }}"
+              data-name="{{ f }}"
+            />
+
+            <!-- Number -->
+            <input
+              id="num_{{ loop.index0 }}"
+              class="input"
+              style="max-width: 160px;"
+              name="{{ f }}"
+              value="{{ values[f] }}"
+              type="number"
+              inputmode="decimal"
+              step="any"
+              {% if r %}
+                min="{{ minv }}"
+                max="{{ maxv }}"
+                placeholder="{{ minv }} – {{ maxv }}"
+                data-min="{{ minv }}"
+                data-max="{{ maxv }}"
+              {% else %}
+                placeholder="Enter a number"
+              {% endif %}
+              autocomplete="off"
+              required
+              data-pair="rng_{{ loop.index0 }}"
+            />
+          </div>
+
+          <div class="field-error" aria-live="polite" style="min-height: 16px;"></div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="row" style="margin-top: 14px; justify-content: flex-end;">
+      <button class="btn secondary" type="button" id="randomBtn">🎲 Random valid values</button>
+      <button class="btn secondary" type="button" id="resetBtn">Reset</button>
+      <button class="btn" type="submit">Predict →</button>
+    </div>
+  </div>
+</form>
+
+{% if prediction %}
+  <div class="card" style="margin-top: 14px;">
+    <h3 style="margin-top:0;">Prediction</h3>
+    <p style="margin: 8px 0 0; font-size: 18px;">
+      <b>{{ prediction }}</b>
+    </p>
+
+    {% if probabilities %}
+      <div style="margin-top: 12px; overflow:auto;">
+        <table>
+          <thead>
+            <tr><th>Class</th><th>Probability</th></tr>
+          </thead>
+          <tbody>
+            {% for cls, p in probabilities %}
+              <tr>
+                <td>{{ cls }}</td>
+                <td>{{ "%.4f"|format(p) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
+
+<script>
+  const form = document.getElementById('wineForm');
+  const resetBtn = document.getElementById('resetBtn');
+  const randomBtn = document.getElementById('randomBtn');
+
+  const numberInputs = Array.from(form.querySelectorAll('input[type="number"]'));
+  const rangeInputs = Array.from(form.querySelectorAll('input[type="range"]'));
+
+  function setError(input, msg) {
+    input.classList.add('invalid');
+    const err = input.closest('div').parentElement.querySelector('.field-error');
+    if (err) err.textContent = msg || '';
+  }
+
+  function clearError(input) {
+    input.classList.remove('invalid');
+    const err = input.closest('div').parentElement.querySelector('.field-error');
+    if (err) err.textContent = '';
+  }
+
+  function validateOne(numInput) {
+    const raw = (numInput.value ?? '').toString().trim();
+
+    if (!raw) { setError(numInput, 'Required.'); return false; }
+
+    const val = Number(raw);
+    if (!Number.isFinite(val)) { setError(numInput, 'Must be a valid number (use "." for decimals).'); return false; }
+
+    const minAttr = numInput.dataset.min;
+    const maxAttr = numInput.dataset.max;
+    if (minAttr !== undefined && maxAttr !== undefined) {
+      const min = Number(minAttr);
+      const max = Number(maxAttr);
+      if (Number.isFinite(min) && Number.isFinite(max) && (val < min || val > max)) {
+        setError(numInput, `Out of range. Use ${min} – ${max}.`);
+        return false;
+      }
+    }
+
+    clearError(numInput);
+    return true;
+  }
+
+  function clamp(val, min, max) {
+    if (!Number.isFinite(val)) return min;
+    return Math.min(max, Math.max(min, val));
+  }
+
+  function syncFromNumber(num) {
+    const pairId = num.dataset.pair;
+    if (!pairId) return;
+    const slider = document.getElementById(pairId);
+    if (!slider) return;
+
+    const v = Number(num.value);
+    if (!Number.isFinite(v)) return;
+
+    const min = Number(slider.min);
+    const max = Number(slider.max);
+    slider.value = clamp(v, min, max);
+  }
+
+  function syncFromSlider(slider) {
+    const pairId = slider.dataset.pair;
+    if (!pairId) return;
+    const num = document.getElementById(pairId);
+    if (!num) return;
+
+    // Keep nice decimals
+    const step = Number(slider.step) || 0.01;
+    const decimals = (step.toString().split('.')[1] || '').length;
+    const v = Number(slider.value);
+
+    num.value = decimals > 0 ? v.toFixed(decimals) : String(Math.round(v));
+    validateOne(num);
+  }
+
+  // Prevent commas and validate
+  numberInputs.forEach(num => {
+    num.addEventListener('keydown', (e) => {
+      if (e.key === ',') e.preventDefault();
+    });
+    num.addEventListener('input', () => {
+      // If user typed a value, keep slider in sync
+      syncFromNumber(num);
+      validateOne(num);
+    });
+    num.addEventListener('blur', () => validateOne(num));
+  });
+
+  rangeInputs.forEach(slider => {
+    slider.addEventListener('input', () => syncFromSlider(slider));
+  });
+
+  // Initialize sliders based on existing values or defaults (midpoint)
+  rangeInputs.forEach(slider => {
+    const num = document.getElementById(slider.dataset.pair);
+    const min = Number(slider.min);
+    const max = Number(slider.max);
+    const mid = (min + max) / 2;
+
+    if (num && num.value && Number.isFinite(Number(num.value))) {
+      slider.value = clamp(Number(num.value), min, max);
+    } else {
+      slider.value = mid;
+      if (num) {
+        // set number too (respect step decimals)
+        const step = Number(slider.step) || 0.01;
+        const decimals = (step.toString().split('.')[1] || '').length;
+        num.value = decimals > 0 ? Number(slider.value).toFixed(decimals) : String(Math.round(slider.value));
+      }
+    }
+    if (num) validateOne(num);
+  });
+
+  // Random fill
+  function randomInRange(min, max, step) {
+    const s = Number(step) || 0.01;
+    const steps = Math.floor((max - min) / s);
+    const rStep = Math.floor(Math.random() * (steps + 1));
+    const val = min + rStep * s;
+
+    const decimals = (s.toString().split('.')[1] || '').length;
+    return decimals > 0 ? Number(val.toFixed(decimals)) : Math.round(val);
+  }
+
+  randomBtn.addEventListener('click', () => {
+    rangeInputs.forEach(slider => {
+      const min = Number(slider.min);
+      const max = Number(slider.max);
+      const step = Number(slider.step) || 0.01;
+
+      const v = randomInRange(min, max, step);
+      slider.value = v;
+
+      const num = document.getElementById(slider.dataset.pair);
+      if (num) {
+        const decimals = (step.toString().split('.')[1] || '').length;
+        num.value = decimals > 0 ? Number(v).toFixed(decimals) : String(Math.round(v));
+        validateOne(num);
+      }
+    });
+  });
+
+  resetBtn.addEventListener('click', () => {
+    numberInputs.forEach(n => { n.value = ''; clearError(n); });
+    // reset sliders to midpoints
+    rangeInputs.forEach(slider => {
+      const min = Number(slider.min);
+      const max = Number(slider.max);
+      slider.value = (min + max) / 2;
+      syncFromSlider(slider);
+    });
+  });
+
+  form.addEventListener('submit', (e) => {
+    let ok = true;
+    for (const num of numberInputs) {
+      if (!validateOne(num)) ok = false;
+    }
+    if (!ok) {
+      e.preventDefault();
+      const firstBad = form.querySelector('.invalid');
+      if (firstBad) firstBad.focus({ preventScroll: false });
+    }
+  });
+</script>
+
+{% endblock %}

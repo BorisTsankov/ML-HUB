@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="card" style="padding: 18px;">
+  <h1 style="font-size: 28px; letter-spacing: -0.02em;">ML Labs Hub</h1>
+  <p style="margin-top: 6px;">Pick a lab to test your model and see predictions.</p>
+
+  <div class="row" style="margin-top: 14px; align-items: center; justify-content: space-between;">
+    <div style="flex: 1; min-width: 240px;">
+      <input id="labSearch" class="input" type="search" placeholder="Search labs by title..." />
+      <div class="hint">Tip: type “wine” to find the wine categorizer fast.</div>
+    </div>
+
+    <div class="row" style="align-items:center;">
+      <button class="btn secondary" type="button" onclick="filterLabs('all')">All</button>
+      <button class="btn secondary" type="button" onclick="filterLabs('ready')">Ready</button>
+      <button class="btn secondary" type="button" onclick="filterLabs('missing')">Missing</button>
+    </div>
+  </div>
+</div>
+
+<div id="labList" style="margin-top: 14px;">
+  {% for lab in labs %}
+    <div class="card lab-card"
+         data-title="{{ lab.title|lower }}"
+         data-status="{{ lab.status }}">
+      <div class="row" style="justify-content: space-between; align-items:center;">
+        <div style="min-width: 240px; flex: 1;">
+          <h2 style="margin:0; font-size: 18px;">{{ lab.title }}</h2>
+          <p style="margin:6px 0 0;">{{ lab.description }}</p>
+        </div>
+
+        {% if lab.status == "ready" %}
+          <span class="badge ok"><span class="dot"></span>Model ready</span>
+        {% else %}
+          <span class="badge bad"><span class="dot"></span>Model missing</span>
+        {% endif %}
+      </div>
+
+      {% if lab.status != "ready" and lab.error %}
+        <p class="error" style="margin-top:10px;">{{ lab.error }}</p>
+      {% endif %}
+
+      <div style="margin-top:12px; display:flex; justify-content:flex-end;">
+        <a class="btn" href="/labs/{{ lab.slug }}">Open lab →</a>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+<script>
+  const searchInput = document.getElementById('labSearch');
+  const labCards = Array.from(document.querySelectorAll('.lab-card'));
+  let currentFilter = 'all';
+
+  function applyFilters() {
+    const q = (searchInput.value || '').trim().toLowerCase();
+
+    labCards.forEach(card => {
+      const title = card.dataset.title || '';
+      const status = card.dataset.status || '';
+
+      const matchesSearch = !q || title.includes(q);
+      const matchesFilter =
+        currentFilter === 'all' ||
+        (currentFilter === 'ready' && status === 'ready') ||
+        (currentFilter === 'missing' && status !== 'ready');
+
+      card.style.display = (matchesSearch && matchesFilter) ? '' : 'none';
+    });
+  }
+
+  function filterLabs(which) {
+    currentFilter = which;
+    applyFilters();
+  }
+
+  searchInput.addEventListener('input', applyFilters);
+  applyFilters();
+</script>
+
+{% endblock %}
