@@ -1,0 +1,39 @@
+# Virtual environment
+venv/
+env/
+ENV/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# VSCode
+.vscode/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Mac
+.DS_Store
+
+# Logs
+*.log
+
+# Environment variables
+.env
+
+# Build / artifacts
+dist/
+build/
+*.egg-info/
+
+# PyTorch / model checkpoints (if you add later)
+*.pt
+*.pth
+*.h5
+*.model
+
+# Large CSV files (optional if wine.csv is small)
+# data/
